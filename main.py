@@ -1,113 +1,116 @@
-import cv2
+# Plotting stuff
 from collections import deque
-
-import mediapipe as mp
-import time
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 
+# Computer Vision Stuff
+import cv2
+import mediapipe as mp
 
-USE_CAMERA = False
+# Output to CSV stuff
+import csv
 
-# https://google.github.io/mediapipe/solutions/pose
+from const import id_name
 
-hor_y = {
-    i: deque([(0, 0)], maxlen=30) for i in range(32 + 1)
-}  # Isinya Map[Int -> Array[Tupple(x_axis, y_axis)]], dengan key adalah index dari landmark (0-32), x_axis adalah nomer frame (horizontal axis), dan y_axis adalah valuenya
-ver_y = {i: deque([(0, 0)], maxlen=30) for i in range(32 + 1)}
+fig, (ax_ver, ax_hor) = plt.subplots(2)
 
+# Rolling range, we don't want a really long plot
+# Just show a small window of the latest n-th item
+rolling_range = None
 
-# def main():
-#     # region Source of Video
-#     if USE_CAMERA:
-#         camindex = 0
-#         cap = cv2.VideoCapture(camindex)
-#         if not cap.isOpened():
-#             raise Exception(f"Failed to open camera at index {camindex}")
-#     else:
-#         cap = cv2.VideoCapture("./sample/a.mp4")
-#     # endregion
+datas_hor = {id: deque([(0, 0)], maxlen=rolling_range) for id in range(32 + 1)}
+datas_ver = {id: deque([(0, 0)], maxlen=rolling_range) for id in range(32 + 1)}
+line_plots_hor = {
+    id: ax_ver.plot(*zip(*datas_hor[id]), label=f"X {id}")[0] for id in range(32 + 1)
+}
+line_plots_ver = {
+    id: ax_hor.plot(*zip(*datas_ver[id]), label=f"Y {id}")[0] for id in range(32 + 1)
+}
 
-#     mpPose = mp.solutions.pose
-#     pose = mpPose.Pose()
-#     mpDraw = mp.solutions.drawing_utils
+# OpenCV stuff
+cap = cv2.VideoCapture("./sample/a.mp4")
 
-#     i = 0
-
-#     while True:
-#         i += 1
-#         data_x.append(i)
-
-#         ok, frameRaw = cap.read()
-#         if not ok:
-#             raise Exception("Failed to read frame")
-
-#         frameCanvas = frameRaw.copy()
-
-#         frameRGB = cv2.cvtColor(frameRaw, cv2.COLOR_BGR2RGB)
-#         results = pose.process(frameRGB)
-
-#         if results.pose_landmarks:
-#             mpDraw.draw_landmarks(
-#                 frameCanvas, results.pose_landmarks, mpPose.POSE_CONNECTIONS
-#             )
-#             for id, lm in enumerate(results.pose_landmarks.landmark):
-#                 h, w, c = frameCanvas.shape
-#                 # print(id, lm)
-#                 cx, cy = int(lm.x * w), int(lm.y * h)
-
-#                 # if id == 0:
-#                 hor_y[id].append(cy)
-#                 ver_y[id].append(cx)
-
-#                 cv2.circle(frameCanvas, (cx, cy), 5, (255, 0, 0), cv2.FILLED)
-
-#         cv2.imshow("Raw Frame", frameRaw)
-#         cv2.imshow("Image", frameCanvas)
-
-#         for id in hor_y.keys():
-#             plt.plot(
-#                 deque(data_x, maxlen=30),
-#                 deque(hor_y[id], maxlen=30),
-#                 label=f"HOR{str(id)}",
-#             )
-#             plt.plot(
-#                 deque(data_x, maxlen=30),
-#                 deque(ver_y[id], maxlen=30),
-#                 label=f"VER{str(id)}",
-#             )
-#         plt.pause(0.05)
-
-#         # plt.scatter
-
-#         if cv2.waitKey(1) == ord("q"):
-#             break
+# Pose Estimation
+mpPose = mp.solutions.pose
+pose = mpPose.Pose()
+mpDraw = mp.solutions.drawing_utils
 
 
-line_plots = {i: plt.plot(*zip(*hor_y[i]))[0] for i in range(32 + 1)}
+def animate(cur_frame):
+    # OpenCV
+    ok, frameRaw = cap.read()
+    if not ok:
+        raise Exception("Failed to read frame")
+    frameRGB = cv2.cvtColor(frameRaw, cv2.COLOR_BGR2RGB)
+    frameCanvas = frameRGB.copy()
 
-cur_frame = 0
+    # Pose Estimating
+    results = pose.process(frameRGB)
+    if results.pose_landmarks:
+        mpDraw.draw_landmarks(
+            frameCanvas, results.pose_landmarks, mpPose.POSE_CONNECTIONS
+        )
+        for id, lm in enumerate(results.pose_landmarks.landmark):
+            h, w, c = frameCanvas.shape
+            cx, cy = int(lm.x * w), int(lm.y * h)
+
+            # Prepare data for plotting
+            datas_hor[id].append((cur_frame, cx))
+            datas_ver[id].append((cur_frame, cy))
+
+            # Visualize estimated pose
+            cv2.circle(frameCanvas, (cx, cy), 5, (255, 0, 0), cv2.FILLED)
+
+    # Preview Frame
+    cv2.imshow("Pose Estimated", frameCanvas)
+    cv2.waitKey(1)
+
+    # Plotting
+    ax_ver.relim()
+    ax_ver.autoscale_view()
+    ax_hor.relim()
+    ax_hor.autoscale_view()
+    for id in range(32 + 1):
+        line_plots_hor[id].set_data(*zip(*datas_hor[id]))
+        line_plots_ver[id].set_data(*zip(*datas_ver[id]))
+
+    if cur_frame == 1:
+        # Remove the very first data point
+        # We can't create empty line plot, so to get around this we create
+        # a line plot with single placeholder item
+        # But the placeholder item will skew the line plot toward the 0 value
+        # causing the range to be 0-400ish, while the y is at around 300ish
+        # so removing the placeholder will decrease the range of the plot
+        # to be around 250ish to 350ish
+        for i in range(32 + 1):
+            datas_hor[i].popleft()
+            datas_ver[i].popleft()
+    if cur_frame == 280:
+        # Output the data to csv
+        with open("a.csv", "w", newline="") as file:
+            writer = csv.writer(file, quoting=csv.QUOTE_NONNUMERIC, delimiter=",")
+
+            # Write row header
+            header = ["frame_no"]
+            for i, col_name in id_name.items():
+                header.append(f"x{col_name}")
+                header.append(f"y{col_name}")
+            writer.writerow(header)
+
+            # Write value
+            assert len(datas_hor) == len(datas_ver)
+            for i in range(len(datas_hor[0])):
+                row = [i]  # First col is frame number
+                for col_index, _ in id_name.items():
+                    row.append(datas_hor[col_index][i][1])
+                    row.append(datas_ver[col_index][i][1])
+                writer.writerow(row)
+
+        print("Finish 300 frame")
+        return
 
 
-
-def animate(i):
-    global cur_frame
-    cur_frame += 1
-
-
-
-    y = np.random.randn()
-    hor_y[0].append((cur_frame, y))
-    # ax.relim()
-    # ax.autoscale_view()
-    line_plots[0].set_data(*zip(*hor_y[0]))
-    print(*zip(*hor_y[0]))
-
-
-# (line,) = plt.plot(*zip(*data), c="black")
-
-fig, ax = plt.subplots()
 if __name__ == "__main__":
-    ani = animation.FuncAnimation(fig, animate, interval=100)
+    ani = animation.FuncAnimation(fig, animate, interval=1)
     plt.show()

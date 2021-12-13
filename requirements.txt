@@ -2,3 +2,7 @@ opencv-python
 mediapipe
 
 autopep8
+
+fastdtw
+scipy
+pandas
