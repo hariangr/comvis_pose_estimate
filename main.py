@@ -90,10 +90,12 @@ line_plots = {i: plt.plot(*zip(*hor_y[i]))[0] for i in range(32 + 1)}
 cur_frame = 0
 
 
+
 def animate(i):
     global cur_frame
     cur_frame += 1
-    print(cur_frame)
+
+
 
     y = np.random.randn()
     hor_y[0].append((cur_frame, y))
