@@ -15,7 +15,7 @@ from const import id_name
 
 # OpenCV stuff
 cap = cv2.VideoCapture("./sample/Ellen_and_Brian.mp4")
-capB = cv2.VideoCapture("./sample/a.mp4")
+capB = cv2.VideoCapture("./sample/LEIA.mp4")
 
 fig, ((ax_ver, bx_ver, analyze_ver, overall_sim), (ax_hor, bx_hor, analyze_hor, _)) = plt.subplots(2, 4)
 
